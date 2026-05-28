@@ -511,12 +511,10 @@ class Nora:
     def _build_context(self) -> str:
         if not self.file_contents:
             return ""
-        parts = ["Her er innholdet i de innlastede filene:\n"]
+        parts = ["Her er det fullstendige innholdet i de innlastede filene:\n"]
         for fc in self.file_contents:
             parts.append(f"=== {fc.filename} ===")
-            parts.append(fc.text[:8000])
-            if len(fc.text) > 8000:
-                parts.append(f"[... {len(fc.text) - 8000} tegn utelatt ...]")
+            parts.append(fc.text)
         return "\n\n".join(parts)
 
 
