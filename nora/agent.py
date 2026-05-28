@@ -1,29 +1,47 @@
 """
 NORA – core agent logic.
 
-Orchestrates file reading, calculations, and web data fetching through
-an LLM (Azure OpenAI or OpenAI) using the Assistants / tool-calling API.
+Arkitektur-oversikt:
+    Bygget som en Azure AI Foundry-agent med lokale verktøy for
+    fillesing, beregninger og henting av data fra pålitelige nettkilder.
+
+    Flyten er:
+    1. Konfigurasjon lastes fra .env via python-dotenv / pydantic-settings
+    2. Filer leses og tekst+tall trekkes ut (file_reader)
+    3. Agentdefinisjon bygges med system prompt + verktøydefinisjonar
+    4. Agenten registreres i Azure AI Foundry (create-kommandoen)
+    5. Chat-løkken håndterer verktøykall og viser svar til bruker
+
+Bruk:
+    python -m nora.agent create        # Opprett / oppdater agenten i Foundry
+    python -m nora.agent chat          # Start interaktiv samtale
+    python -m nora.agent create chat   # Opprett og start samtale
+
+    Eller via CLI: nora chat / nora create
+
+Forutsetninger:
+    - Kopier .env.example til .env og fyll inn PROJECT_ENDPOINT
+    - Logg inn med: azd auth login --scope https://ai.azure.com/.default
+    - Installer avhengigheter: pip install -e .
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import Optional
 
-import openai
+from azure.identity import DefaultAzureCredential
+from azure.ai.projects import AIProjectClient
 
 from .calculator import (
-    aggregate_by,
     cagr,
     convert_currency,
-    correlation_matrix,
     describe_series,
-    detect_outliers_iqr,
     linear_regression,
     npv,
-    numeric_summary,
     percentage_change,
     safe_eval,
     yoy_growth,
@@ -39,7 +57,7 @@ from .web_fetcher import (
 
 log = logging.getLogger(__name__)
 
-# ── Tool definitions (OpenAI function calling schema) ─────────────────────────
+# ── Tool definitions (Foundry / OpenAI function calling schema) ───────────────
 
 TOOLS: list[dict] = [
     {
@@ -263,20 +281,27 @@ def _dispatch(name: str, args: dict) -> str:
         return json.dumps({"error": f"Ukjent verktøy: {name}"})
 
 
-# ── OpenAI client factory ─────────────────────────────────────────────────────
+# ── Foundry client ────────────────────────────────────────────────────────────
 
-def _build_client() -> tuple[openai.OpenAI | openai.AzureOpenAI, str]:
-    """Return (client, model_name) depending on settings."""
-    if settings.use_azure:
-        client = openai.AzureOpenAI(
-            api_key=settings.azure_openai_api_key,
-            azure_endpoint=settings.azure_openai_endpoint,
-            api_version=settings.azure_openai_api_version,
+def get_client() -> AIProjectClient:
+    """
+    Opprett Foundry-klient med DefaultAzureCredential.
+
+    DefaultAzureCredential prøver autentiseringsmetoder i rekkefølge:
+        1. Miljøvariabler (AZURE_CLIENT_ID osv.)
+        2. Managed Identity (i Azure-miljø)
+        3. Azure CLI (az login)
+        4. Azure Developer CLI (azd auth login --scope https://ai.azure.com/.default)
+
+    Kaster ValueError hvis PROJECT_ENDPOINT ikke er konfigurert.
+    """
+    if not settings.project_endpoint:
+        raise ValueError(
+            "PROJECT_ENDPOINT er ikke satt. "
+            "Kopier .env.example til .env og fyll inn endepunktet."
         )
-        return client, settings.azure_openai_deployment
-    else:
-        client = openai.OpenAI(api_key=settings.openai_api_key)
-        return client, settings.openai_model
+    credential = DefaultAzureCredential()
+    return AIProjectClient(endpoint=settings.project_endpoint, credential=credential)
 
 
 # ── NORA system prompt ────────────────────────────────────────────────────────
@@ -298,98 +323,207 @@ Vær presis: si eksplisitt hvilke tall du har funnet i hvilken fil.
 """.strip()
 
 
+def build_agent_definition(file_context: str) -> dict:
+    """Bygg agentdefinisjon med verktøy for registrering i Foundry."""
+    instructions = SYSTEM_PROMPT
+    if file_context:
+        instructions += f"\n\n{file_context}"
+    return {
+        "kind": "prompt",
+        "instructions": instructions,
+        "model": settings.model_deployment_name,
+        "tools": TOOLS,
+    }
+
+
 # ── Main agent class ──────────────────────────────────────────────────────────
 
 class Nora:
     """
-    NORA agent – load files, then chat.
+    NORA agent – last filer, opprett agent i Foundry, chat.
 
-    Usage:
+    Bruk:
         agent = Nora()
-        agent.load_folder()          # or agent.load_file("myfile.xlsx")
+        agent.load_folder()                   # eller agent.load_file("fil.xlsx")
+        agent.create_or_update_agent()        # registrer/oppdater i Foundry
         response = agent.ask("Hva er total omsetning?")
         print(response)
     """
 
     def __init__(self) -> None:
-        self.client, self.model = _build_client()
         self.file_contents: list[FileContent] = []
-        self.history: list[dict] = []
+        self.conversation_history: list[dict] = []
+        self._client: Optional[AIProjectClient] = None
+        self._openai_client = None
 
     # ── File loading ──────────────────────────────────────────────────────────
 
     def load_file(self, path: str | Path) -> None:
-        """Load a single file into the agent's context."""
+        """Last inn én fil i agentens kontekst."""
         fc = read_file(Path(path))
         self.file_contents.append(fc)
         log.info("Lastet: %s", fc.filename)
 
     def load_folder(self, folder: Optional[str | Path] = None) -> None:
-        """Load all supported files from *folder* (default: settings.data_folder)."""
+        """Last inn alle støttede filer fra *folder* (standard: settings.data_folder)."""
         folder = Path(folder) if folder else settings.data_folder
         self.file_contents = read_folder(folder)
         log.info("Lastet %d fil(er) fra %s", len(self.file_contents), folder)
 
+    # ── Foundry agent management ──────────────────────────────────────────────
+
+    def create_or_update_agent(self) -> None:
+        """Opprett en ny versjon av NORA-agenten i Foundry."""
+        client = self._get_client()
+        file_context = self._build_context()
+        definition = build_agent_definition(file_context)
+
+        log.info("Oppretter / oppdaterer agent '%s' i Foundry ...", settings.agent_name)
+        result = client.agents.create_version(settings.agent_name, {"definition": definition})
+        log.info(
+            "Agent '%s' klar  |  versjon: %s",
+            settings.agent_name,
+            result.get("version", "ukjent"),
+        )
+        print(f"\n✅  Agent '{settings.agent_name}' er klar i Foundry.\n")
+
     # ── Conversation ──────────────────────────────────────────────────────────
 
     def ask(self, question: str) -> str:
-        """Send *question* to NORA and return her response."""
-        if not self.history:
-            # Build initial context from loaded files
-            context = self._build_context()
-            self.history = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": context},
-                {"role": "assistant", "content": "Jeg har lest filene og er klar til å hjelpe. Hva vil du vite?"},
-            ]
+        """Send *question* til NORA og returner svaret."""
+        openai_client = self._get_openai_client()
+        self.conversation_history.append({"role": "user", "content": question})
 
-        self.history.append({"role": "user", "content": question})
-        response = self._run_with_tools()
-        self.history.append({"role": "assistant", "content": response})
-        return response
+        response = openai_client.responses.create(
+            model=settings.model_deployment_name,
+            input=self.conversation_history,
+            extra_body={
+                "agent_reference": {
+                    "type": "agent_reference",
+                    "name": settings.agent_name,
+                }
+            },
+        )
+
+        # ── Verktøy-loop ──────────────────────────────────────────────────────
+        while True:
+            tool_calls = [
+                item for item in (response.output or [])
+                if getattr(item, "type", None) == "function_call"
+            ]
+            if not tool_calls:
+                break
+
+            tool_outputs = []
+            for tc in tool_calls:
+                tool_args = json.loads(tc.arguments or "{}")
+                log.info("Verktøykall: %s(%s)", tc.name, tool_args)
+                tool_result = _dispatch(tc.name, tool_args)
+                tool_outputs.append({
+                    "type": "function_call_output",
+                    "call_id": tc.call_id,
+                    "output": tool_result,
+                })
+
+            response = openai_client.responses.create(
+                model=settings.model_deployment_name,
+                input=tool_outputs,
+                extra_body={
+                    "agent_reference": {
+                        "type": "agent_reference",
+                        "name": settings.agent_name,
+                    },
+                    "previous_response_id": response.id,
+                },
+            )
+
+        answer = response.output_text or ""
+        self.conversation_history.append({"role": "assistant", "content": answer})
+        return answer
 
     def reset(self) -> None:
-        """Clear conversation history (keeps loaded files)."""
-        self.history = []
+        """Tøm samtalehistorikk (beholder innlastede filer)."""
+        self.conversation_history = []
 
     # ── Private helpers ───────────────────────────────────────────────────────
 
+    def _get_client(self) -> AIProjectClient:
+        if self._client is None:
+            self._client = get_client()
+        return self._client
+
+    def _get_openai_client(self):
+        if self._openai_client is None:
+            self._openai_client = self._get_client().get_openai_client()
+        return self._openai_client
+
     def _build_context(self) -> str:
         if not self.file_contents:
-            return "Ingen filer er lastet inn ennå."
+            return ""
         parts = ["Her er innholdet i de innlastede filene:\n"]
         for fc in self.file_contents:
             parts.append(f"=== {fc.filename} ===")
-            parts.append(fc.text[:8000])  # truncate very large files
+            parts.append(fc.text[:8000])
             if len(fc.text) > 8000:
                 parts.append(f"[... {len(fc.text) - 8000} tegn utelatt ...]")
         return "\n\n".join(parts)
 
-    def _run_with_tools(self) -> str:
-        """Run the model with tool-calling loop until a final response is produced."""
-        messages = list(self.history)
 
-        for _ in range(10):  # max 10 tool rounds
-            completion = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=TOOLS,
-                tool_choice="auto",
-            )
-            msg = completion.choices[0].message
+# ── Inngangspunkt (python -m nora.agent create chat) ──────────────────────────
 
-            if msg.tool_calls:
-                messages.append(msg)
-                for tc in msg.tool_calls:
-                    args = json.loads(tc.function.arguments)
-                    log.debug("Tool call: %s(%s)", tc.function.name, args)
-                    result = _dispatch(tc.function.name, args)
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": result,
-                    })
-            else:
-                return msg.content or ""
+def main() -> None:
+    """Parse kommandolinjeargumenter og kjør valgt(e) kommando(er)."""
+    args = set(sys.argv[1:])
 
-        return "Beklager, kunne ikke fullføre beregningen etter maks antall steg."
+    if not args or args.isdisjoint({"create", "chat"}):
+        print(__doc__)
+        sys.exit(0)
+
+    agent = Nora()
+
+    with_files = "chat" in args
+    if with_files:
+        log.info("Laster filer fra %s", settings.data_folder)
+        agent.load_folder()
+
+    if "create" in args:
+        agent.create_or_update_agent()
+
+    if "chat" in args:
+        _interactive_chat(agent)
+
+
+def _interactive_chat(agent: Nora) -> None:
+    """Interaktiv chat-løkke i terminalen."""
+    print("\n🔢  NORA – Numerical Operations & Results Assistant")
+    if agent.file_contents:
+        names = ", ".join(fc.filename for fc in agent.file_contents)
+        print(f"    Lastede filer: {names}")
+    print("    Skriv spørsmålet ditt, eller 'avslutt' for å avslutte.\n")
+
+    while True:
+        try:
+            user_input = input("Du: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nAvslutter.")
+            break
+
+        if not user_input:
+            continue
+        if user_input.lower() in {"avslutt", "exit", "quit"}:
+            print("Samtalen er avsluttet.")
+            break
+
+        try:
+            answer = agent.ask(user_input)
+        except Exception as exc:
+            log.error("Feil: %s", exc)
+            print(f"\n⚠️  Feil: {exc}\n")
+            continue
+
+        print(f"\nNORA: {answer}\n")
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    main()

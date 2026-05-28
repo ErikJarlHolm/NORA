@@ -58,14 +58,26 @@ pip install -e ".[dev]"
 
 ### 2. Konfigurer
 
-Kopier `.env.example` til `.env` og fyll inn API-nøkler:
+Kopier `.env.example` til `.env` og fyll inn Foundry-endepunktet:
 
 ```bash
 copy .env.example .env
-# Rediger .env med din Azure OpenAI- eller OpenAI-nøkkel
+# Rediger .env
 ```
 
-### 3. Legg filer i datamappen
+```env
+PROJECT_ENDPOINT=https://aoai-6iqz3w5n5zn3w.services.ai.azure.com/api/projects/proj-6iqz3w5n5zn3w
+MODEL_DEPLOYMENT_NAME=gpt-5-mini
+AGENT_NAME=nora
+```
+
+### 3. Logg inn i Azure
+
+```bash
+azd auth login --scope https://ai.azure.com/.default
+```
+
+### 4. Legg filer i datamappen
 
 Standard datamappe er:
 ```
@@ -73,10 +85,13 @@ C:\Users\erikholm\OneDrive - Atea\Documents\Kunder\Atea AI Norge\Agent tallknusi
 ```
 Legg Excel-, CSV-, PDF- eller Word-filer her.
 
-### 4. Start NORA
+### 5. Registrer agenten og start chat
 
 ```bash
-nora chat
+nora create chat      # registrer i Foundry og start chat
+nora chat             # start chat (uten å re-registrere)
+nora create           # bare registrer/oppdater agenten
+nora info             # vis konfigurasjon
 ```
 
 Alternativer:
@@ -84,7 +99,6 @@ Alternativer:
 nora chat --file rapport.xlsx          # last én fil
 nora chat --folder C:\mine\filer       # bruk annen mappe
 nora chat --verbose                    # vis debug-logger
-nora info                              # vis konfigurasjon
 ```
 
 ---

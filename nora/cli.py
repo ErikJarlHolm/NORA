@@ -2,10 +2,16 @@
 NORA CLI – command-line interface.
 
 Usage examples:
-  nora chat                          # interaktiv chat, laster standardmappen
+  nora create                        # registrer/oppdater agenten i Foundry
+  nora chat                          # interaktiv chat (laster standardmappen)
+  nora create chat                   # registrer og start chat i én operasjon
   nora chat --file rapport.xlsx      # last én spesifikk fil
   nora chat --folder C:\mine\filer   # last en annen mappe
   nora info                          # vis konfigurasjon
+
+Forutsetninger:
+  - Kopier .env.example til .env og fyll inn PROJECT_ENDPOINT
+  - Logg inn med: azd auth login --scope https://ai.azure.com/.default
 """
 
 from __future__ import annotations
@@ -40,6 +46,24 @@ def _setup_logging(level: str) -> None:
 
 
 @app.command()
+def create(
+    file: Optional[Path] = typer.Option(None, "--file", "-f", help="Last inn én enkelt fil"),
+    folder: Optional[Path] = typer.Option(None, "--folder", help="Last inn alle filer i mappen"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Registrer / oppdater NORA-agenten i Azure AI Foundry."""
+    _setup_logging("DEBUG" if verbose else settings.log_level)
+    agent = Nora()
+    with console.status("Laster filer…"):
+        if file:
+            agent.load_file(file)
+        else:
+            agent.load_folder(folder or settings.data_folder)
+    with console.status("Oppretter agent i Foundry…"):
+        agent.create_or_update_agent()
+
+
+@app.command()
 def chat(
     file: Optional[Path] = typer.Option(None, "--file", "-f", help="Last inn én enkelt fil"),
     folder: Optional[Path] = typer.Option(None, "--folder", help="Last inn alle filer i mappen"),
@@ -51,8 +75,8 @@ def chat(
     console.print(
         Panel.fit(
             "[bold cyan]NORA – Numerical Operations & Results Assistant[/bold cyan]\n"
-            "Skriv spørsmålet ditt og trykk Enter. Skriv [bold]exit[/bold] for å avslutte.",
-            title="👩‍💻 NORA",
+            "Skriv spørsmålet ditt og trykk Enter. Skriv [bold]avslutt[/bold] for å avslutte.",
+            title="🔢 NORA",
         )
     )
 
@@ -62,8 +86,7 @@ def chat(
         if file:
             agent.load_file(file)
         else:
-            target = folder or settings.data_folder
-            agent.load_folder(target)
+            agent.load_folder(folder or settings.data_folder)
 
     if not agent.file_contents:
         console.print("[yellow]Ingen filer funnet. Legg filer i datamappen og prøv igjen.[/yellow]")
@@ -79,7 +102,7 @@ def chat(
             console.print("\n[dim]Avslutter.[/dim]")
             break
 
-        if question.strip().lower() in {"exit", "quit", "avslutt", "bye"}:
+        if question.strip().lower() in {"avslutt", "exit", "quit", "bye"}:
             console.print("[dim]Ha det bra![/dim]")
             break
 
@@ -101,10 +124,12 @@ def info() -> None:
     """Vis gjeldende konfigurasjon."""
     _setup_logging(settings.log_level)
     console.print("[bold]NORA konfigurasjon[/bold]")
-    console.print(f"  Backend    : {'Azure OpenAI' if settings.use_azure else 'OpenAI'}")
-    console.print(f"  Modell     : {settings.azure_openai_deployment if settings.use_azure else settings.openai_model}")
-    console.print(f"  Datamappe  : {settings.data_folder}")
-    console.print(f"  Finnes     : {'✓' if settings.data_folder.exists() else '✗ (mangler)'}")
+    console.print(f"  Backend        : Azure AI Foundry")
+    console.print(f"  Endepunkt      : {settings.project_endpoint or '[red]ikke satt[/red]'}")
+    console.print(f"  Modell         : {settings.model_deployment_name}")
+    console.print(f"  Agentnavn      : {settings.agent_name}")
+    console.print(f"  Datamappe      : {settings.data_folder}")
+    console.print(f"  Mappe finnes   : {'✓' if settings.data_folder.exists() else '✗ (mangler)'}")
 
 
 if __name__ == "__main__":
