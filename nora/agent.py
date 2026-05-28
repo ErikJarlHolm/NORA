@@ -50,6 +50,15 @@ try:
         safe_eval,
         yoy_growth,
     )
+    from .chart_generator import (
+        create_area_chart,
+        create_bar_chart,
+        create_horizontal_bar_chart,
+        create_line_chart,
+        create_pie_chart,
+        create_scatter_plot,
+        create_stacked_bar_chart,
+    )
     from .config import settings
     from .file_reader import FileContent, read_file, read_folder
     from .web_fetcher import (
@@ -69,6 +78,15 @@ except ImportError:
         percentage_change,
         safe_eval,
         yoy_growth,
+    )
+    from chart_generator import (  # type: ignore
+        create_area_chart,
+        create_bar_chart,
+        create_horizontal_bar_chart,
+        create_line_chart,
+        create_pie_chart,
+        create_scatter_plot,
+        create_stacked_bar_chart,
     )
     from config import settings  # type: ignore
     from file_reader import FileContent, read_file, read_folder  # type: ignore
@@ -264,27 +282,6 @@ TOOLS: list[dict] = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "save_result",
-            "description": "Lagre et resultat (tabell, tekst, CSV) til en fil i data-mappen. Bruk dette når brukeren ber deg lagre, eksportere eller skrive resultater til fil.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "filename": {
-                        "type": "string",
-                        "description": "Filnavn med endelse, f.eks. 'bensin_statistikk.csv' eller 'resultat.txt'",
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "Innholdet som skal skrives til filen (CSV-tekst, vanlig tekst, markdown, etc.)",
-                    },
-                },
-                "required": ["filename", "content"],
-            },
-        },
-    },
 ]
 
 
@@ -340,12 +337,6 @@ def _dispatch(name: str, args: dict) -> str:
         result = convert_currency(**args, rates=_nb_rates_cache)
         return json.dumps({"converted": result})
 
-    elif name == "save_result":
-        filepath = settings.data_folder / args["filename"]
-        filepath.write_text(args["content"], encoding="utf-8")
-        log.info("Lagret fil: %s", filepath)
-        return json.dumps({"saved": str(filepath)})
-
     else:
         return json.dumps({"error": f"Ukjent verktøy: {name}"})
 
@@ -385,12 +376,10 @@ Oppgavene dine inkluderer:
 - Utføre presise, komplekse beregninger (statistikk, finans, vekst, konvertering, regresjon)
 - Hente oppdaterte tall fra internett NÅR det er nødvendig (valutakurser, KPI, statistikk)
 - Alltid bruke kun pålitelige, offisielle kilder (Norges Bank, SSB, ECB, Verdensbanken, Eurostat)
-- Lagre resultater til fil (CSV, tekst, markdown) når brukeren ber om det, ved hjelp av save_result-verktøyet
 
 Svar alltid på norsk med mindre brukeren ber om noe annet.
 Vis beregningstrinn tydelig. Oppgi kilde når du bruker data fra internett.
 Vær presis: si eksplisitt hvilke tall du har funnet i hvilken fil.
-Når brukeren ber deg lagre, eksportere eller skrive til fil, bruk save_result-verktøyet.
 """.strip()
 
 
