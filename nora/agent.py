@@ -345,6 +345,25 @@ Vær presis: si eksplisitt hvilke tall du har funnet i hvilken fil.
 """.strip()
 
 
+def _to_foundry_tools(tools: list[dict]) -> list[dict]:
+    """Konverter fra OpenAI-format til Foundry FunctionTool-format.
+
+    OpenAI:  {"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}
+    Foundry: {"type": "function", "name": ..., "description": ..., "parameters": ..., "strict": false}
+    """
+    foundry_tools = []
+    for tool in tools:
+        fn = tool["function"]
+        foundry_tools.append({
+            "type": "function",
+            "name": fn["name"],
+            "description": fn.get("description", ""),
+            "parameters": fn.get("parameters", {}),
+            "strict": False,
+        })
+    return foundry_tools
+
+
 def build_agent_definition(file_context: str) -> dict:
     """Bygg agentdefinisjon med verktøy for registrering i Foundry."""
     instructions = SYSTEM_PROMPT
@@ -354,7 +373,7 @@ def build_agent_definition(file_context: str) -> dict:
         "kind": "prompt",
         "instructions": instructions,
         "model": settings.model_deployment_name,
-        "tools": TOOLS,
+        "tools": _to_foundry_tools(TOOLS),
     }
 
 
@@ -414,6 +433,12 @@ class Nora:
     def ask(self, question: str) -> str:
         """Send *question* til NORA og returner svaret."""
         openai_client = self._get_openai_client()
+
+        # Inject file context as system message on first interaction
+        if not self.conversation_history and self.file_contents:
+            file_context = self._build_context()
+            self.conversation_history.append({"role": "system", "content": file_context})
+
         self.conversation_history.append({"role": "user", "content": question})
 
         response = openai_client.responses.create(
