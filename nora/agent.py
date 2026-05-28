@@ -34,6 +34,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+import openai
 from azure.identity import DefaultAzureCredential
 from azure.ai.projects import AIProjectClient
 
@@ -79,6 +80,24 @@ except ImportError:
     )
 
 log = logging.getLogger(__name__)
+
+_MAX_RETRIES = 5
+_INITIAL_WAIT = 5  # seconds
+
+
+def _call_with_retry(fn, *args, **kwargs):
+    """Call *fn* with exponential backoff on 429 RateLimitError."""
+    for attempt in range(_MAX_RETRIES):
+        try:
+            return fn(*args, **kwargs)
+        except openai.RateLimitError:
+            if attempt == _MAX_RETRIES - 1:
+                raise
+            wait = _INITIAL_WAIT * (2 ** attempt)
+            log.warning("429 rate limit – venter %ds før nytt forsøk (%d/%d)",
+                        wait, attempt + 1, _MAX_RETRIES)
+            time.sleep(wait)
+
 
 # ── Tool definitions (Foundry / OpenAI function calling schema) ───────────────
 
@@ -450,7 +469,8 @@ class Nora:
         # Use previous_response_id for follow-up questions to avoid
         # resending the full file context (saves tokens / avoids 429).
         if self._last_response_id:
-            response = openai_client.responses.create(
+            response = _call_with_retry(
+                openai_client.responses.create,
                 model=settings.model_deployment_name,
                 input=[{"type": "message", "role": "user", "content": question}],
                 extra_body={
@@ -462,7 +482,8 @@ class Nora:
                 },
             )
         else:
-            response = openai_client.responses.create(
+            response = _call_with_retry(
+                openai_client.responses.create,
                 model=settings.model_deployment_name,
                 input=self.conversation_history,
                 extra_body={
@@ -493,8 +514,8 @@ class Nora:
                     "output": tool_result,
                 })
 
-            time.sleep(1)  # Brief pause to avoid rate-limit hits between tool calls
-            response = openai_client.responses.create(
+            response = _call_with_retry(
+                openai_client.responses.create,
                 model=settings.model_deployment_name,
                 input=tool_outputs,
                 extra_body={
