@@ -434,12 +434,16 @@ class Nora:
         """Send *question* til NORA og returner svaret."""
         openai_client = self._get_openai_client()
 
-        # Inject file context as system message on first interaction
+        # Inject file context as developer message on first interaction
         if not self.conversation_history and self.file_contents:
             file_context = self._build_context()
-            self.conversation_history.append({"role": "system", "content": file_context})
+            self.conversation_history.append({
+                "type": "message",
+                "role": "developer",
+                "content": file_context,
+            })
 
-        self.conversation_history.append({"role": "user", "content": question})
+        self.conversation_history.append({"type": "message", "role": "user", "content": question})
 
         response = openai_client.responses.create(
             model=settings.model_deployment_name,
@@ -485,7 +489,7 @@ class Nora:
             )
 
         answer = response.output_text or ""
-        self.conversation_history.append({"role": "assistant", "content": answer})
+        self.conversation_history.append({"type": "message", "role": "assistant", "content": answer})
         return answer
 
     def reset(self) -> None:
