@@ -48,6 +48,15 @@ try:
         safe_eval,
         yoy_growth,
     )
+    from .chart_generator import (
+        create_area_chart,
+        create_bar_chart,
+        create_horizontal_bar_chart,
+        create_line_chart,
+        create_pie_chart,
+        create_scatter_plot,
+        create_stacked_bar_chart,
+    )
     from .config import settings
     from .file_reader import FileContent, read_file, read_folder
     from .web_fetcher import (
@@ -67,6 +76,15 @@ except ImportError:
         percentage_change,
         safe_eval,
         yoy_growth,
+    )
+    from chart_generator import (  # type: ignore
+        create_area_chart,
+        create_bar_chart,
+        create_horizontal_bar_chart,
+        create_line_chart,
+        create_pie_chart,
+        create_scatter_plot,
+        create_stacked_bar_chart,
     )
     from config import settings  # type: ignore
     from file_reader import FileContent, read_file, read_folder  # type: ignore
@@ -244,6 +262,145 @@ TOOLS: list[dict] = [
             },
         },
     },
+    # ── Chart tools ───────────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "create_bar_chart",
+            "description": "Lag et stolpediagram (bar chart) og lagre som PNG-bilde.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "labels": {"type": "array", "items": {"type": "string"}, "description": "Kategorier/etiketter for x-aksen"},
+                    "values": {"type": "array", "items": {"type": "number"}, "description": "Verdier for hver kategori"},
+                    "title": {"type": "string", "description": "Tittel på diagrammet"},
+                    "xlabel": {"type": "string", "description": "Etikett for x-aksen"},
+                    "ylabel": {"type": "string", "description": "Etikett for y-aksen"},
+                    "filename": {"type": "string", "description": "Filnavn (uten eller med .png)"},
+                    "color": {"type": "string", "description": "Farge (hex-kode, f.eks. #FF5722)"},
+                },
+                "required": ["labels", "values"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_line_chart",
+            "description": "Lag et linjediagram og lagre som PNG-bilde. Støtter flere linjer.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "x": {"type": "array", "items": {}, "description": "X-verdier (tall eller tekst/årstall)"},
+                    "y": {"type": "array", "items": {"type": "number"}, "description": "Y-verdier for én linje"},
+                    "title": {"type": "string", "description": "Tittel på diagrammet"},
+                    "xlabel": {"type": "string", "description": "Etikett for x-aksen"},
+                    "ylabel": {"type": "string", "description": "Etikett for y-aksen"},
+                    "filename": {"type": "string", "description": "Filnavn"},
+                    "series_labels": {"type": "array", "items": {"type": "string"}, "description": "Navn på hver serie (for flere linjer)"},
+                    "y_series": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}, "description": "Liste av y-verdier per serie (for flere linjer)"},
+                },
+                "required": ["x", "y"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_pie_chart",
+            "description": "Lag et kakediagram (pie chart) og lagre som PNG-bilde.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "labels": {"type": "array", "items": {"type": "string"}, "description": "Kategorier"},
+                    "values": {"type": "array", "items": {"type": "number"}, "description": "Verdier for hver kategori"},
+                    "title": {"type": "string", "description": "Tittel"},
+                    "filename": {"type": "string", "description": "Filnavn"},
+                    "explode_largest": {"type": "boolean", "description": "Om den største biten skal fremheves"},
+                },
+                "required": ["labels", "values"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_scatter_plot",
+            "description": "Lag et spredningsdiagram (scatter plot) og lagre som PNG-bilde.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "x": {"type": "array", "items": {"type": "number"}, "description": "X-verdier"},
+                    "y": {"type": "array", "items": {"type": "number"}, "description": "Y-verdier"},
+                    "title": {"type": "string", "description": "Tittel"},
+                    "xlabel": {"type": "string", "description": "Etikett for x-aksen"},
+                    "ylabel": {"type": "string", "description": "Etikett for y-aksen"},
+                    "filename": {"type": "string", "description": "Filnavn"},
+                    "add_trendline": {"type": "boolean", "description": "Om en trendlinje skal legges til"},
+                },
+                "required": ["x", "y"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_horizontal_bar_chart",
+            "description": "Lag et horisontalt stolpediagram og lagre som PNG-bilde.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "labels": {"type": "array", "items": {"type": "string"}, "description": "Kategorier"},
+                    "values": {"type": "array", "items": {"type": "number"}, "description": "Verdier"},
+                    "title": {"type": "string", "description": "Tittel"},
+                    "xlabel": {"type": "string", "description": "Etikett for x-aksen"},
+                    "ylabel": {"type": "string", "description": "Etikett for y-aksen"},
+                    "filename": {"type": "string", "description": "Filnavn"},
+                    "color": {"type": "string", "description": "Farge (hex-kode)"},
+                },
+                "required": ["labels", "values"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_stacked_bar_chart",
+            "description": "Lag et stablet stolpediagram og lagre som PNG-bilde.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "labels": {"type": "array", "items": {"type": "string"}, "description": "Kategorier på x-aksen"},
+                    "series_data": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}, "description": "Verdier per serie"},
+                    "series_labels": {"type": "array", "items": {"type": "string"}, "description": "Navn på hver serie"},
+                    "title": {"type": "string", "description": "Tittel"},
+                    "xlabel": {"type": "string", "description": "Etikett for x-aksen"},
+                    "ylabel": {"type": "string", "description": "Etikett for y-aksen"},
+                    "filename": {"type": "string", "description": "Filnavn"},
+                },
+                "required": ["labels", "series_data", "series_labels"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_area_chart",
+            "description": "Lag et arealdiagram og lagre som PNG-bilde.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "x": {"type": "array", "items": {}, "description": "X-verdier (tall eller tekst)"},
+                    "y": {"type": "array", "items": {"type": "number"}, "description": "Y-verdier"},
+                    "title": {"type": "string", "description": "Tittel"},
+                    "xlabel": {"type": "string", "description": "Etikett for x-aksen"},
+                    "ylabel": {"type": "string", "description": "Etikett for y-aksen"},
+                    "filename": {"type": "string", "description": "Filnavn"},
+                },
+                "required": ["x", "y"],
+            },
+        },
+    },
 ]
 
 
@@ -299,6 +456,35 @@ def _dispatch(name: str, args: dict) -> str:
         result = convert_currency(**args, rates=_nb_rates_cache)
         return json.dumps({"converted": result})
 
+    # ── Chart tools ───────────────────────────────────────────────────────────
+    elif name == "create_bar_chart":
+        filepath = create_bar_chart(**args)
+        return json.dumps({"status": "ok", "filepath": filepath})
+
+    elif name == "create_line_chart":
+        filepath = create_line_chart(**args)
+        return json.dumps({"status": "ok", "filepath": filepath})
+
+    elif name == "create_pie_chart":
+        filepath = create_pie_chart(**args)
+        return json.dumps({"status": "ok", "filepath": filepath})
+
+    elif name == "create_scatter_plot":
+        filepath = create_scatter_plot(**args)
+        return json.dumps({"status": "ok", "filepath": filepath})
+
+    elif name == "create_horizontal_bar_chart":
+        filepath = create_horizontal_bar_chart(**args)
+        return json.dumps({"status": "ok", "filepath": filepath})
+
+    elif name == "create_stacked_bar_chart":
+        filepath = create_stacked_bar_chart(**args)
+        return json.dumps({"status": "ok", "filepath": filepath})
+
+    elif name == "create_area_chart":
+        filepath = create_area_chart(**args)
+        return json.dumps({"status": "ok", "filepath": filepath})
+
     else:
         return json.dumps({"error": f"Ukjent verktøy: {name}"})
 
@@ -338,10 +524,17 @@ Oppgavene dine inkluderer:
 - Utføre presise, komplekse beregninger (statistikk, finans, vekst, konvertering, regresjon)
 - Hente oppdaterte tall fra internett NÅR det er nødvendig (valutakurser, KPI, statistikk)
 - Alltid bruke kun pålitelige, offisielle kilder (Norges Bank, SSB, ECB, Verdensbanken, Eurostat)
+- Lage grafer, kakediagram, linjediagram og andre visualiseringer som PNG-bilder
 
 Svar alltid på norsk med mindre brukeren ber om noe annet.
 Vis beregningstrinn tydelig. Oppgi kilde når du bruker data fra internett.
 Vær presis: si eksplisitt hvilke tall du har funnet i hvilken fil.
+
+Når du lager grafer/diagrammer:
+- Velg diagramtype som passer best til dataene (kakediagram for andeler, linjediagram for trender, osv.)
+- Gi diagrammet en beskrivende tittel
+- Bruk meningsfulle filnavn som beskriver innholdet
+- Bekreft til brukeren hvor filen ble lagret
 """.strip()
 
 
