@@ -36,24 +36,46 @@ from typing import Optional
 from azure.identity import DefaultAzureCredential
 from azure.ai.projects import AIProjectClient
 
-from .calculator import (
-    cagr,
-    convert_currency,
-    describe_series,
-    linear_regression,
-    npv,
-    percentage_change,
-    safe_eval,
-    yoy_growth,
-)
-from .config import settings
-from .file_reader import FileContent, read_file, read_folder
-from .web_fetcher import (
-    get_ecb_rates,
-    get_norges_bank_rates,
-    get_ssb_kpi,
-    get_world_bank_indicator,
-)
+try:
+    # Kjøres som pakke: python -m nora.agent
+    from .calculator import (
+        cagr,
+        convert_currency,
+        describe_series,
+        linear_regression,
+        npv,
+        percentage_change,
+        safe_eval,
+        yoy_growth,
+    )
+    from .config import settings
+    from .file_reader import FileContent, read_file, read_folder
+    from .web_fetcher import (
+        get_ecb_rates,
+        get_norges_bank_rates,
+        get_ssb_kpi,
+        get_world_bank_indicator,
+    )
+except ImportError:
+    # Kjøres som script: python agent.py (fra nora/-mappen)
+    from calculator import (  # type: ignore
+        cagr,
+        convert_currency,
+        describe_series,
+        linear_regression,
+        npv,
+        percentage_change,
+        safe_eval,
+        yoy_growth,
+    )
+    from config import settings  # type: ignore
+    from file_reader import FileContent, read_file, read_folder  # type: ignore
+    from web_fetcher import (  # type: ignore
+        get_ecb_rates,
+        get_norges_bank_rates,
+        get_ssb_kpi,
+        get_world_bank_indicator,
+    )
 
 log = logging.getLogger(__name__)
 
