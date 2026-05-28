@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -396,6 +397,7 @@ class Nora:
         self.conversation_history: list[dict] = []
         self._client: Optional[AIProjectClient] = None
         self._openai_client = None
+        self._last_response_id: Optional[str] = None
 
     # ── File loading ──────────────────────────────────────────────────────────
 
@@ -445,16 +447,31 @@ class Nora:
 
         self.conversation_history.append({"type": "message", "role": "user", "content": question})
 
-        response = openai_client.responses.create(
-            model=settings.model_deployment_name,
-            input=self.conversation_history,
-            extra_body={
-                "agent_reference": {
-                    "type": "agent_reference",
-                    "name": settings.agent_name,
-                }
-            },
-        )
+        # Use previous_response_id for follow-up questions to avoid
+        # resending the full file context (saves tokens / avoids 429).
+        if self._last_response_id:
+            response = openai_client.responses.create(
+                model=settings.model_deployment_name,
+                input=[{"type": "message", "role": "user", "content": question}],
+                extra_body={
+                    "agent_reference": {
+                        "type": "agent_reference",
+                        "name": settings.agent_name,
+                    },
+                    "previous_response_id": self._last_response_id,
+                },
+            )
+        else:
+            response = openai_client.responses.create(
+                model=settings.model_deployment_name,
+                input=self.conversation_history,
+                extra_body={
+                    "agent_reference": {
+                        "type": "agent_reference",
+                        "name": settings.agent_name,
+                    }
+                },
+            )
 
         # ── Verktøy-loop ──────────────────────────────────────────────────────
         while True:
@@ -476,6 +493,7 @@ class Nora:
                     "output": tool_result,
                 })
 
+            time.sleep(1)  # Brief pause to avoid rate-limit hits between tool calls
             response = openai_client.responses.create(
                 model=settings.model_deployment_name,
                 input=tool_outputs,
@@ -488,6 +506,7 @@ class Nora:
                 },
             )
 
+        self._last_response_id = response.id
         answer = response.output_text or ""
         self.conversation_history.append({"type": "message", "role": "assistant", "content": answer})
         return answer
@@ -495,6 +514,7 @@ class Nora:
     def reset(self) -> None:
         """Tøm samtalehistorikk (beholder innlastede filer)."""
         self.conversation_history = []
+        self._last_response_id = None
 
     # ── Private helpers ───────────────────────────────────────────────────────
 
