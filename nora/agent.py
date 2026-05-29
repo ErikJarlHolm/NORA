@@ -59,6 +59,7 @@ try:
         create_scatter_plot,
         create_stacked_bar_chart,
     )
+    from .pdf_generator import create_pdf_report
     from .config import settings
     from .file_reader import FileContent, read_file, read_folder
     from .web_fetcher import (
@@ -88,6 +89,7 @@ except ImportError:
         create_scatter_plot,
         create_stacked_bar_chart,
     )
+    from pdf_generator import create_pdf_report  # type: ignore
     from config import settings  # type: ignore
     from file_reader import FileContent, read_file, read_folder  # type: ignore
     from web_fetcher import (  # type: ignore
@@ -422,6 +424,27 @@ TOOLS: list[dict] = [
             },
         },
     },
+    # ── PDF tool ──────────────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "create_pdf_report",
+            "description": "Lag en PDF-rapport med tittel, tekst, tabeller og/eller bilder og lagre lokalt. BRUK DETTE når brukeren ber om en PDF, rapport, eller dokument. Støtter overskrifter (## og ###), avsnitt, tabeller og innfelling av PNG-bilder.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Hovedtittel på rapporten"},
+                    "content": {"type": "string", "description": "Brødtekst. Bruk \\n\\n for avsnitt. Bruk '## ' for mellomoverskrift og '### ' for underoverskrift."},
+                    "filename": {"type": "string", "description": "Filnavn for PDF-en (med eller uten .pdf)"},
+                    "output_folder": {"type": "string", "description": "Mappe å lagre i (standard: brukerens angitte mappe)"},
+                    "images": {"type": "array", "items": {"type": "string"}, "description": "Liste med filstier til PNG-bilder som skal inkluderes i rapporten"},
+                    "table_data": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}, "description": "Tabellrader – liste av lister med strengverdier"},
+                    "table_headers": {"type": "array", "items": {"type": "string"}, "description": "Kolonneoverskrifter for tabellen"},
+                },
+                "required": ["title", "content", "filename"],
+            },
+        },
+    },
 ]
 
 
@@ -506,6 +529,10 @@ def _dispatch(name: str, args: dict) -> str:
         filepath = create_area_chart(**args)
         return json.dumps({"status": "ok", "filepath": filepath})
 
+    elif name == "create_pdf_report":
+        filepath = create_pdf_report(**args)
+        return json.dumps({"status": "ok", "filepath": filepath})
+
     else:
         return json.dumps({"error": f"Ukjent verktøy: {name}"})
 
@@ -553,6 +580,16 @@ create_horizontal_bar_chart, create_stacked_bar_chart og create_area_chart.
 Disse verktøyene kjører LOKALT på brukerens maskin og lagrer PNG-filer direkte til disk.
 Når brukeren ber om et diagram eller graf, BRUK ALLTID disse verktøyene – ikke gi brukeren
 et Python-skript. Verktøyene fungerer og skriver til riktig mappe automatisk.
+
+VIKTIG OM PDF-RAPPORTER:
+Du har verktøyet create_pdf_report som lager PDF-filer LOKALT på brukerens maskin.
+Når brukeren ber om en PDF, rapport eller dokument – BRUK DETTE VERKTØYET umiddelbart.
+Du KAN skrive PDF. Verktøyet støtter:
+- Overskrifter (## og ### i content)
+- Avsnitt (separert med dobbel linjeskift)
+- Tabeller (table_data + table_headers)
+- Innfelling av PNG-bilder (images – bruk filstiene fra grafverktøyene)
+Du kan kombinere graf- og PDF-verktøy: lag først grafen, så legg bildet inn i PDF-rapporten.
 
 Tekniske detaljer om verktøyene:
 - create_bar_chart og create_horizontal_bar_chart fargelegger automatisk per år dersom

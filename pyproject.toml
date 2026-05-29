@@ -27,6 +27,9 @@ dependencies = [
     # Visualisering / grafer
     "matplotlib>=3.8.0",
 
+    # PDF-generering
+    "fpdf2>=2.7.0",
+
     # Config / env
     "python-dotenv>=1.0.0",
     "pydantic>=2.7.0",
