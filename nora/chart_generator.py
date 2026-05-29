@@ -45,6 +45,17 @@ def _save_figure(fig: plt.Figure, filename: str, output_folder: Optional[str] = 
     return str(filepath)
 
 
+def _labels_have_year_prefix(labels: list[str]) -> bool:
+    """Sjekk om labels ser ut som datoer med årstalprefix (f.eks. '2019-01')."""
+    if not labels:
+        return False
+    try:
+        years = set(lbl[:4] for lbl in labels)
+        return len(years) > 1 and all(y.isdigit() for y in years)
+    except (IndexError, TypeError):
+        return False
+
+
 def create_bar_chart(
     labels: list[str],
     values: list[float],
@@ -54,10 +65,28 @@ def create_bar_chart(
     filename: str = "bar_chart.png",
     output_folder: Optional[str] = None,
     color: Optional[str] = None,
+    color_by_group: bool = False,
 ) -> str:
-    """Lag et stolpediagram og lagre som PNG. Returnerer filstien."""
-    fig, ax = plt.subplots(figsize=(10, 6))
-    bars = ax.bar(labels, values, color=color or "#2196F3", edgecolor="white", linewidth=0.5)
+    """Lag et stolpediagram og lagre som PNG.
+
+    Hvis color_by_group=True eller labels inneholder årstall-prefiks,
+    fargelegges stolpene automatisk per gruppe/år.
+    """
+    fig, ax = plt.subplots(figsize=(max(10, len(labels) * 0.2), 6))
+
+    if color_by_group or (color is None and _labels_have_year_prefix(labels)):
+        groups = [lbl[:4] for lbl in labels]
+        unique_groups = sorted(set(groups), key=groups.index)
+        palette = plt.cm.tab10(np.linspace(0, 1, min(len(unique_groups), 10)))
+        group_colors = {g: palette[i % 10] for i, g in enumerate(unique_groups)}
+        bar_colors = [group_colors[g] for g in groups]
+        ax.bar(labels, values, color=bar_colors, edgecolor="white", linewidth=0.5)
+
+        import matplotlib.patches as mpatches
+        patches = [mpatches.Patch(color=group_colors[g], label=g) for g in unique_groups]
+        ax.legend(handles=patches, title="År", loc="upper right", framealpha=0.9)
+    else:
+        ax.bar(labels, values, color=color or "#2196F3", edgecolor="white", linewidth=0.5)
 
     ax.set_title(title, fontsize=14, fontweight="bold", pad=15)
     if xlabel:
@@ -67,7 +96,8 @@ def create_bar_chart(
 
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.tick_params(axis="x", rotation=45 if len(labels) > 6 else 0)
+    ax.grid(True, axis="y", alpha=0.3)
+    ax.tick_params(axis="x", rotation=90 if len(labels) > 12 else (45 if len(labels) > 6 else 0))
     fig.tight_layout()
 
     return _save_figure(fig, filename, output_folder)
@@ -75,7 +105,7 @@ def create_bar_chart(
 
 def create_line_chart(
     x: list[float | str],
-    y: list[float],
+    y: Optional[list[float]] = None,
     title: str = "Linjediagram",
     xlabel: str = "",
     ylabel: str = "",
@@ -89,16 +119,27 @@ def create_line_chart(
 
     For flere linjer, bruk y_series (liste av y-verdier per serie)
     og series_labels for å navngi dem. Enkeltlinje bruker y direkte.
+    None-verdier i y_series hoppes over (brudd i linjen).
     """
     fig, ax = plt.subplots(figsize=(10, 6))
 
     if y_series and series_labels:
         colors = plt.cm.tab10(np.linspace(0, 1, len(y_series)))
         for i, (ys, label) in enumerate(zip(y_series, series_labels)):
-            ax.plot(x[: len(ys)], ys, marker="o", markersize=4, label=label, color=colors[i])
+            # Filter out None values while keeping x alignment
+            x_vals = []
+            y_vals = []
+            for j, val in enumerate(ys):
+                if val is not None and j < len(x):
+                    x_vals.append(x[j])
+                    y_vals.append(val)
+            if y_vals:
+                ax.plot(x_vals, y_vals, marker="o", markersize=4, label=label, color=colors[i])
         ax.legend(framealpha=0.9)
-    else:
+    elif y:
         ax.plot(x, y, marker="o", markersize=4, color="#1976D2", linewidth=2)
+    else:
+        raise ValueError("Enten 'y' eller 'y_series' + 'series_labels' må oppgis.")
 
     ax.set_title(title, fontsize=14, fontweight="bold", pad=15)
     if xlabel:
@@ -193,10 +234,30 @@ def create_horizontal_bar_chart(
     filename: str = "hbar_chart.png",
     output_folder: Optional[str] = None,
     color: Optional[str] = None,
+    color_by_group: bool = False,
 ) -> str:
-    """Lag et horisontalt stolpediagram og lagre som PNG."""
-    fig, ax = plt.subplots(figsize=(10, max(6, len(labels) * 0.5)))
-    ax.barh(labels, values, color=color or "#4CAF50", edgecolor="white", linewidth=0.5)
+    """Lag et horisontalt stolpediagram og lagre som PNG.
+
+    Hvis color_by_group=True, fargelegges stolpene automatisk basert på
+    gruppeprefikset i labels (f.eks. årstall fra '2019-01' → '2019').
+    """
+    fig, ax = plt.subplots(figsize=(10, max(6, len(labels) * 0.4)))
+
+    if color_by_group or (color is None and _labels_have_year_prefix(labels)):
+        # Auto-detect groups from label prefix (year)
+        groups = [lbl[:4] for lbl in labels]
+        unique_groups = sorted(set(groups), key=groups.index)
+        palette = plt.cm.tab10(np.linspace(0, 1, min(len(unique_groups), 10)))
+        group_colors = {g: palette[i % 10] for i, g in enumerate(unique_groups)}
+        bar_colors = [group_colors[g] for g in groups]
+        ax.barh(labels, values, color=bar_colors, edgecolor="white", linewidth=0.5)
+
+        # Legend
+        import matplotlib.patches as mpatches
+        patches = [mpatches.Patch(color=group_colors[g], label=g) for g in unique_groups]
+        ax.legend(handles=patches, title="År", loc="lower right", framealpha=0.9)
+    else:
+        ax.barh(labels, values, color=color or "#4CAF50", edgecolor="white", linewidth=0.5)
 
     ax.set_title(title, fontsize=14, fontweight="bold", pad=15)
     if xlabel:
@@ -206,6 +267,7 @@ def create_horizontal_bar_chart(
 
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+    ax.grid(True, axis="x", alpha=0.3)
     fig.tight_layout()
 
     return _save_figure(fig, filename, output_folder)

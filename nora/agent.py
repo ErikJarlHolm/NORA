@@ -312,15 +312,15 @@ TOOLS: list[dict] = [
                 "type": "object",
                 "properties": {
                     "x": {"type": "array", "items": {}, "description": "X-verdier (tall eller tekst/årstall)"},
-                    "y": {"type": "array", "items": {"type": "number"}, "description": "Y-verdier for én linje"},
+                    "y": {"type": "array", "items": {"type": "number"}, "description": "Y-verdier for én linje (ikke nødvendig ved bruk av y_series)"},
                     "title": {"type": "string", "description": "Tittel på diagrammet"},
                     "xlabel": {"type": "string", "description": "Etikett for x-aksen"},
                     "ylabel": {"type": "string", "description": "Etikett for y-aksen"},
                     "filename": {"type": "string", "description": "Filnavn"},
                     "series_labels": {"type": "array", "items": {"type": "string"}, "description": "Navn på hver serie (for flere linjer)"},
-                    "y_series": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}, "description": "Liste av y-verdier per serie (for flere linjer)"},
+                    "y_series": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}, "description": "Liste av y-verdier per serie (for flere linjer). Bruk null for manglende verdier."},
                 },
-                "required": ["x", "y"],
+                "required": ["x"],
             },
         },
     },
@@ -366,7 +366,7 @@ TOOLS: list[dict] = [
         "type": "function",
         "function": {
             "name": "create_horizontal_bar_chart",
-            "description": "Lag et horisontalt stolpediagram og lagre som PNG-bilde lokalt.",
+            "description": "Lag et horisontalt stolpediagram og lagre som PNG-bilde lokalt. Fargelegger automatisk per år dersom labels er datoer (f.eks. '2019-01').",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -376,7 +376,8 @@ TOOLS: list[dict] = [
                     "xlabel": {"type": "string", "description": "Etikett for x-aksen"},
                     "ylabel": {"type": "string", "description": "Etikett for y-aksen"},
                     "filename": {"type": "string", "description": "Filnavn"},
-                    "color": {"type": "string", "description": "Farge (hex-kode)"},
+                    "color": {"type": "string", "description": "Enkeltfarge (hex-kode). Utelat for auto-farging per år."},
+                    "color_by_group": {"type": "boolean", "description": "Sett til true for å fargelegge per år/gruppe basert på labels"},
                 },
                 "required": ["labels", "values"],
             },
@@ -552,6 +553,22 @@ create_horizontal_bar_chart, create_stacked_bar_chart og create_area_chart.
 Disse verktøyene kjører LOKALT på brukerens maskin og lagrer PNG-filer direkte til disk.
 Når brukeren ber om et diagram eller graf, BRUK ALLTID disse verktøyene – ikke gi brukeren
 et Python-skript. Verktøyene fungerer og skriver til riktig mappe automatisk.
+
+Tekniske detaljer om verktøyene:
+- create_bar_chart og create_horizontal_bar_chart fargelegger automatisk per år dersom
+  labels inneholder datoer (f.eks. '2019-01', '2020-03'). Du trenger IKKE spørre om farger.
+- create_line_chart støtter flere serier via y_series + series_labels (da trengs ikke y).
+  None-verdier i y_series håndteres automatisk (hopp over manglende data).
+- Alle verktøy legger til grid-linjer automatisk for lettere avlesning.
+
+VIKTIG OM BESLUTNINGER:
+- Ikke still brukeren unødvendige oppfølgingsspørsmål. Ta EGNE beslutninger basert på hva
+  brukeren ba om.
+- Hvis brukerens forespørsel er tydelig, LAG DIAGRAMMET UMIDDELBART uten å spørre om
+  alternativer eller avklaringer.
+- Du kan stille MAKSIMALT ETT oppfølgingsspørsmål dersom noe virkelig er uklart.
+  Etter det MÅ du ta en beslutning og lage diagrammet.
+- Brukeren vil ha resultater, ikke diskusjon om diagramtyper.
 
 Svar alltid på norsk med mindre brukeren ber om noe annet.
 Vis beregningstrinn tydelig. Oppgi kilde når du bruker data fra internett.
